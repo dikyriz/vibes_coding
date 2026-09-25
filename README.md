@@ -71,10 +71,11 @@ drizzle.config.ts  # konfigurasi Drizzle Kit
 
 ## Endpoint
 
-| Method | Path         | Keterangan           |
-| ------ | ------------ | -------------------- |
-| `GET`  | `/health`    | Health check         |
-| `POST` | `/api/users` | Registrasi user baru |
+| Method | Path               | Keterangan           |
+| ------ | ------------------ | -------------------- |
+| `GET`  | `/health`          | Health check         |
+| `POST` | `/api/users`       | Registrasi user baru |
+| `POST` | `/api/users/login` | Login user           |
 
 ### Registrasi User
 
@@ -102,6 +103,28 @@ curl -X POST http://localhost:3000/api/users \
 
 ```json
 { "error": "Input tidak valid" }
+```
+
+### Login User
+
+**Request:**
+
+```bash
+curl -X POST http://localhost:3000/api/users/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"dicky@localhost","password":"rahasia"}'
+```
+
+**Response sukses (`200`):**
+
+```json
+{ "data": "550e8400-e29b-41d4-a716-446655440000" }
+```
+
+**Response error (`401`) jika email atau password salah:**
+
+```json
+{ "error": "Email atau password salah" }
 ```
 
 ## Script Database

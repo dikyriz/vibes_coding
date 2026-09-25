@@ -15,6 +15,13 @@
       "when": 1790344592939,
       "tag": "0001_grey_millenium_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1790349869378,
+      "tag": "0002_rich_proteus",
+      "breakpoints": true
     }
   ]
 }
