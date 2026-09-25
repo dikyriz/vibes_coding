@@ -55,31 +55,47 @@ src/
     index.ts
     schema.ts
   middlewares/     # middleware, mis. error handler
-  modules/         # fitur per domain
-    users/
-      users.route.ts
-      users.service.ts
+  routes/          # routing ElysiaJS
+    users-route.ts
+  services/        # logic bisnis aplikasi
+    users-service.ts
   index.ts         # entry point server
 drizzle.config.ts  # konfigurasi Drizzle Kit
 ```
 
 ## Endpoint
 
-| Method   | Path             | Keterangan      |
-| -------- | ---------------- | --------------- |
-| `GET`    | `/health`        | Health check    |
-| `GET`    | `/api/users`     | List semua user |
-| `GET`    | `/api/users/:id` | Detail user     |
-| `POST`   | `/api/users`     | Buat user baru  |
-| `PATCH`  | `/api/users/:id` | Update user     |
-| `DELETE` | `/api/users/:id` | Hapus user      |
+| Method | Path         | Keterangan           |
+| ------ | ------------ | -------------------- |
+| `GET`  | `/health`    | Health check         |
+| `POST` | `/api/users` | Registrasi user baru |
 
-Contoh:
+### Registrasi User
+
+**Request:**
 
 ```bash
 curl -X POST http://localhost:3000/api/users \
   -H "Content-Type: application/json" \
-  -d '{"name":"Budi","email":"budi@example.com"}'
+  -d '{"name":"Dicky","email":"dicky@localhost","password":"rahasia"}'
+```
+
+**Response sukses (`201`):**
+
+```json
+{ "data": "OK" }
+```
+
+**Response error (`409`):**
+
+```json
+{ "error": "Email sudah terdaftar" }
+```
+
+**Response error (`400`) jika input tidak lengkap:**
+
+```json
+{ "error": "Input tidak valid" }
 ```
 
 ## Script Database
