@@ -20,6 +20,13 @@ export class InvalidCredentialsError extends Error {
   }
 }
 
+export class UnauthorizedError extends Error {
+  constructor() {
+    super("Unauthorized");
+    this.name = "UnauthorizedError";
+  }
+}
+
 export const usersService = {
   async isEmailRegistered(email: string) {
     const [user] = await db
@@ -59,5 +66,36 @@ export const usersService = {
     await db.insert(sessions).values({ token, userId: user.id });
 
     return token;
+  },
+
+  async getCurrentUser(token: string) {
+    if (!token) {
+      throw new UnauthorizedError();
+    }
+
+    const [session] = await db
+      .select({ userId: sessions.userId })
+      .from(sessions)
+      .where(eq(sessions.token, token));
+
+    if (!session) {
+      throw new UnauthorizedError();
+    }
+
+    const [user] = await db
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        created_at: users.createdAt,
+      })
+      .from(users)
+      .where(eq(users.id, session.userId));
+
+    if (!user) {
+      throw new UnauthorizedError();
+    }
+
+    return user;
   },
 };

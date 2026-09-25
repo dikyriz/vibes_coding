@@ -71,11 +71,12 @@ drizzle.config.ts  # konfigurasi Drizzle Kit
 
 ## Endpoint
 
-| Method | Path               | Keterangan           |
-| ------ | ------------------ | -------------------- |
-| `GET`  | `/health`          | Health check         |
-| `POST` | `/api/users`       | Registrasi user baru |
-| `POST` | `/api/users/login` | Login user           |
+| Method | Path                 | Keterangan                        |
+| ------ | -------------------- | --------------------------------- |
+| `GET`  | `/health`            | Health check                      |
+| `POST` | `/api/users`         | Registrasi user baru              |
+| `POST` | `/api/users/login`   | Login user                        |
+| `GET`  | `/api/users/current` | Ambil data user yang sedang login |
 
 ### Registrasi User
 
@@ -125,6 +126,36 @@ curl -X POST http://localhost:3000/api/users/login \
 
 ```json
 { "error": "Email atau password salah" }
+```
+
+### Get Current User
+
+Membutuhkan token dari endpoint login (header `Authorization: Bearer <token>`).
+
+**Request:**
+
+```bash
+curl http://localhost:3000/api/users/current \
+  -H "Authorization: Bearer <token>"
+```
+
+**Response sukses (`200`):**
+
+```json
+{
+  "data": {
+    "id": 1,
+    "name": "Dicky",
+    "email": "dicky@localhost",
+    "created_at": "2026-09-25T15:25:25.000Z"
+  }
+}
+```
+
+**Response error (`401`) jika token salah atau header tidak dikirim:**
+
+```json
+{ "error": "Unauthorized" }
 ```
 
 ## Script Database

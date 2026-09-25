@@ -3,8 +3,11 @@ import { Elysia, t } from "elysia";
 import {
   EmailAlreadyRegisteredError,
   InvalidCredentialsError,
+  UnauthorizedError,
   usersService,
 } from "../services/users-service";
+
+const BEARER_PREFIX = "Bearer ";
 
 export const usersRoute = new Elysia({ prefix: "/users" })
   .post(
@@ -50,4 +53,21 @@ export const usersRoute = new Elysia({ prefix: "/users" })
         password: t.String({ minLength: 1 }),
       }),
     },
-  );
+  )
+  .get("/current", async ({ headers, status }) => {
+    const authorization = headers.authorization ?? "";
+    const token = authorization.startsWith(BEARER_PREFIX)
+      ? authorization.slice(BEARER_PREFIX.length)
+      : "";
+
+    try {
+      const user = await usersService.getCurrentUser(token);
+      return status(200, { data: user });
+    } catch (error) {
+      if (error instanceof UnauthorizedError) {
+        return status(401, { error: error.message });
+      }
+
+      throw error;
+    }
+  });
