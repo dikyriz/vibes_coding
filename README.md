@@ -23,12 +23,18 @@ Backend REST API dengan **Bun + ElysiaJS + Drizzle ORM + MySQL**.
 
    Variabel yang tersedia:
 
-   | Variabel       | Keterangan                   |
-   | -------------- | ---------------------------- |
-   | `PORT`         | Port server (default `3000`) |
-   | `DATABASE_URL` | Connection string MySQL      |
+   | Variabel       | Keterangan                                                                   |
+   | -------------- | ---------------------------------------------------------------------------- |
+   | `PORT`         | Port server (default `3000`)                                                 |
+   | `DATABASE_URL` | Connection string MySQL (default `mysql://root@localhost:3306/vibes_coding`) |
 
-3. Buat tabel di database (pilih salah satu):
+3. Buat database jika belum ada:
+
+   ```sql
+   CREATE DATABASE IF NOT EXISTS vibes_coding;
+   ```
+
+4. Buat tabel di database (pilih salah satu):
 
    ```bash
    bun run db:push      # sinkronkan schema langsung ke database
