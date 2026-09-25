@@ -98,4 +98,21 @@ export const usersService = {
 
     return user;
   },
+
+  async logout(token: string) {
+    if (!token) {
+      throw new UnauthorizedError();
+    }
+
+    const [session] = await db
+      .select({ id: sessions.id })
+      .from(sessions)
+      .where(eq(sessions.token, token));
+
+    if (!session) {
+      throw new UnauthorizedError();
+    }
+
+    await db.delete(sessions).where(eq(sessions.token, token));
+  },
 };

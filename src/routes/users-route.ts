@@ -9,6 +9,11 @@ import {
 
 const BEARER_PREFIX = "Bearer ";
 
+const extractBearerToken = (authorization?: string) =>
+  authorization?.startsWith(BEARER_PREFIX)
+    ? authorization.slice(BEARER_PREFIX.length)
+    : "";
+
 export const usersRoute = new Elysia({ prefix: "/users" })
   .post(
     "/",
@@ -55,14 +60,25 @@ export const usersRoute = new Elysia({ prefix: "/users" })
     },
   )
   .get("/current", async ({ headers, status }) => {
-    const authorization = headers.authorization ?? "";
-    const token = authorization.startsWith(BEARER_PREFIX)
-      ? authorization.slice(BEARER_PREFIX.length)
-      : "";
+    const token = extractBearerToken(headers.authorization);
 
     try {
       const user = await usersService.getCurrentUser(token);
       return status(200, { data: user });
+    } catch (error) {
+      if (error instanceof UnauthorizedError) {
+        return status(401, { error: error.message });
+      }
+
+      throw error;
+    }
+  })
+  .delete("/logout", async ({ headers, status }) => {
+    const token = extractBearerToken(headers.authorization);
+
+    try {
+      await usersService.logout(token);
+      return status(200, { data: "OK" });
     } catch (error) {
       if (error instanceof UnauthorizedError) {
         return status(401, { error: error.message });

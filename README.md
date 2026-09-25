@@ -71,12 +71,13 @@ drizzle.config.ts  # konfigurasi Drizzle Kit
 
 ## Endpoint
 
-| Method | Path                 | Keterangan                        |
-| ------ | -------------------- | --------------------------------- |
-| `GET`  | `/health`            | Health check                      |
-| `POST` | `/api/users`         | Registrasi user baru              |
-| `POST` | `/api/users/login`   | Login user                        |
-| `GET`  | `/api/users/current` | Ambil data user yang sedang login |
+| Method   | Path                 | Keterangan                        |
+| -------- | -------------------- | --------------------------------- |
+| `GET`    | `/health`            | Health check                      |
+| `POST`   | `/api/users`         | Registrasi user baru              |
+| `POST`   | `/api/users/login`   | Login user                        |
+| `GET`    | `/api/users/current` | Ambil data user yang sedang login |
+| `DELETE` | `/api/users/logout`  | Logout user                       |
 
 ### Registrasi User
 
@@ -150,6 +151,30 @@ curl http://localhost:3000/api/users/current \
     "created_at": "2026-09-25T15:25:25.000Z"
   }
 }
+```
+
+**Response error (`401`) jika token salah atau header tidak dikirim:**
+
+```json
+{ "error": "Unauthorized" }
+```
+
+### Logout User
+
+Menghapus sesi (token) yang dikirim di header. Hanya sesi tersebut yang diakhiri —
+sesi lain milik user yang sama tetap aktif.
+
+**Request:**
+
+```bash
+curl -X DELETE http://localhost:3000/api/users/logout \
+  -H "Authorization: Bearer <token>"
+```
+
+**Response sukses (`200`):**
+
+```json
+{ "data": "OK" }
 ```
 
 **Response error (`401`) jika token salah atau header tidak dikirim:**
