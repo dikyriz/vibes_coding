@@ -2,7 +2,7 @@ import { Elysia } from "elysia";
 
 import { env } from "./config/env";
 import { errorHandler } from "./middlewares/error-handler";
-import { usersRoute } from "./modules/users/users.route";
+import { usersRoute } from "./routes/users-route";
 
 const app = new Elysia()
   .use(errorHandler)
