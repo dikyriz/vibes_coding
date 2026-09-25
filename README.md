@@ -52,6 +52,19 @@ bun run start  # production
 
 Server berjalan di `http://localhost:3000`.
 
+## Menjalankan Test
+
+```bash
+bun run test
+```
+
+Test memakai database MySQL terpisah bernama `vibes_coding_test` — dibuat
+otomatis oleh `tests/setup.ts` (didaftarkan lewat `bunfig.toml` sebagai preload)
+sehingga data development tidak pernah tersentuh. Koneksi yang dipakai adalah
+kredensial dari `DATABASE_URL` di `.env`, hanya nama database-nya yang diganti.
+
+Nama database test bisa dioverride lewat variabel `TEST_DATABASE`.
+
 ## Struktur Folder
 
 ```
