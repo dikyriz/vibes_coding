@@ -1,13 +1,213 @@
 # vibes_coding
 
-Backend REST API dengan **Bun + ElysiaJS + Drizzle ORM + MySQL**.
+Backend REST API untuk manajemen user dengan autentikasi berbasis token (sessions).
+Dibangun menggunakan stack modern yang cepat dan ringan.
 
-## Prasyarat
+## Tech Stack
 
-- [Bun](https://bun.sh) terpasang
+| Lapisan       | Teknologi                                                           |
+| ------------- | ------------------------------------------------------------------- |
+| **Runtime**   | [Bun](https://bun.sh) — JavaScript runtime + package manager        |
+| **Framework** | [ElysiaJS](https://elysiajs.com) — framework HTTP TypeScript-native |
+| **ORM**       | [Drizzle ORM](https://orm.drizzle.team) — query builder & migrasi   |
+| **Database**  | [MySQL](https://www.mysql.com)                                      |
+| **Hashing**   | `bcryptjs` — hash password (pure JS, tanpa native build)            |
+| **Testing**   | `bun test` — test runner bawaan Bun                                 |
+
+## Arsitektur
+
+Aplikasi mengikuti pola **separation of concerns** dengan tiga lapisan utama:
+
+```
+┌─────────────────────────────────────────┐
+│  Routes (src/routes/)                   │
+│  - Menerima HTTP request                │
+│  - Validasi input                       │
+│  - Memanggil service, kembalikan response
+│  - Tidak menyentuh database langsung    │
+└─────────────────┬───────────────────────┘
+                  │ memanggil
+┌─────────────────▼───────────────────────┐
+│  Services (src/services/)               │
+│  - Logic bisnis aplikasi                │
+│  - Validasi data                        │
+│  - Operasi database                     │
+│  - Mengembalikan data ke route          │
+└─────────────────┬───────────────────────┘
+                  │ menggunakan
+┌─────────────────▼───────────────────────┐
+│  Database (src/db/)                     │
+│  - Koneksi pool (mysql2)                │
+│  - Schema definition (Drizzle)          │
+│  - Migrasi (drizzle-kit)                │
+└─────────────────────────────────────────┘
+```
+
+### Lapisan Routes (`src/routes/`)
+
+Berisi definisi endpoint API menggunakan ElysiaJS. Setiap route hanya:
+
+- Membaca request (body, headers, params)
+- Memvalidasi input
+- Memanggil service
+- Mengembalikan response dengan status code yang sesuai
+
+**Konvensi penamaan:** `{nama-fitur}-route.ts`
+
+- Contoh: `users-route.ts` untuk semua endpoint users
+
+### Lapisan Services (`src/services/`)
+
+Berisi logic bisnis yang bisa dipakai ulang. Setiap service:
+
+- Mengakses database lewat Drizzle
+- Menangani validasi bisnis (cek duplikat, hash password, dll)
+- Melempar error domain-specific (`EmailAlreadyRegisteredError`, dll)
+
+**Konvensi penamaan:** `{nama-fitur}-service.ts`
+
+- Contoh: `users-service.ts` untuk semua operasi user
+
+### Lapisan Konfigurasi (`src/config/`)
+
+Berisi pengaturan aplikasi dari environment variables.
+
+### Lapisan Database (`src/db/`)
+
+- `index.ts` — koneksi pool MySQL
+- `schema.ts` — definisi tabel Drizzle
+
+### Middleware (`src/middlewares/`)
+
+Menangani error global dan logic yang dipakai bersama banyak route.
+
+## Struktur Folder
+
+```
+vibes_coding/
+├── src/
+│   ├── app.ts              # Asumsi aplikasi Elysia (di-import index.ts)
+│   ├── index.ts            # Entry point — menjalankan server
+│   ├── config/
+│   │   └── env.ts          # Environment variables
+│   ├── db/
+│   │   ├── index.ts        # Koneksi database
+│   │   └── schema.ts       # Definisi tabel
+│   ├── middlewares/
+│   │   └── error-handler.ts # Error handler global
+│   ├── routes/
+│   │   └── users-route.ts  # Endpoint users (register, login, current, logout)
+│   └── services/
+│       └── users-service.ts # Logic bisnis users
+├── drizzle/                # File migrasi database
+├── tests/                  # Test suite
+│   ├── setup.ts            # Preload test database
+│   ├── helpers.ts          # Helper fungsi test
+│   └── users.test.ts       # Test semua endpoint users
+├── .env.example            # Template environment
+├── bunfig.toml             # Konfigurasi Bun (preload test)
+├── drizzle.config.ts       # Konfigurasi Drizzle Kit
+├── package.json
+└── tsconfig.json
+```
+
+## Skema Database
+
+### Tabel `users`
+
+| Kolom        | Tipe         | Konstrain                   | Keterangan           |
+| ------------ | ------------ | --------------------------- | -------------------- |
+| `id`         | Integer      | PRIMARY KEY, AUTO_INCREMENT | ID unik user         |
+| `name`       | varchar(255) | NOT NULL                    | Nama lengkap user    |
+| `email`      | varchar(255) | NOT NULL, UNIQUE            | Email unik           |
+| `password`   | varchar(255) | NOT NULL                    | Hash bcrypt password |
+| `created_at` | timestamp    | NOT NULL, DEFAULT now()     | Waktu dibuat         |
+
+### Tabel `sessions`
+
+| Kolom        | Tipe         | Konstrain                                   | Keterangan             |
+| ------------ | ------------ | ------------------------------------------- | ---------------------- |
+| `id`         | Integer      | PRIMARY KEY, AUTO_INCREMENT                 | ID sesi                |
+| `token`      | varchar(255) | NOT NULL, UNIQUE                            | Token UUID sesi        |
+| `user_id`    | Integer      | NOT NULL, FK → `users.id` ON DELETE CASCADE | Penghubung ke user     |
+| `created_at` | timestamp    | NOT NULL, DEFAULT now()                     | Waktu sesi dibuat      |
+| `expires_at` | timestamp    | NOT NULL, DEFAULT now()                     | Waktu kedaluwarsa sesi |
+
+## API yang Tersedia
+
+Semua endpoint tersusun di bawah path `/api/users` kecuali health check.
+
+| Method   | Path                 | Deskripsi                | Auth Required |
+| -------- | -------------------- | ------------------------ | ------------- |
+| `GET`    | `/health`            | Health check             | Tidak         |
+| `POST`   | `/api/users`         | Registrasi user baru     | Tidak         |
+| `POST`   | `/api/users/login`   | Login → dapat token UUID | Tidak         |
+| `GET`    | `/api/users/current` | Ambil data user saat ini | Ya (Bearer)   |
+| `DELETE` | `/api/users/logout`  | Logout → hapus sesi      | Ya (Bearer)   |
+
+### Response Format
+
+**Sukses:**
+
+```json
+{ "data": "..." }
+```
+
+**Error:**
+
+```json
+{ "error": "..." }
+```
+
+Status code utama:
+
+- `200` — sukses
+- `201` — dibuat (registrasi)
+- `400` — input tidak valid
+- `401` — tidak sah (token salah/tidak dikirim)
+- `409` — konflik (email sudah terdaftar)
+
+### Contoh Request
+
+**Registrasi:**
+
+```bash
+curl -X POST http://localhost:3000/api/users \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Dicky","email":"dicky@localhost","password":"rahasia"}'
+```
+
+**Login:**
+
+```bash
+curl -X POST http://localhost:3000/api/users/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"dicky@localhost","password":"rahasia"}'
+```
+
+**Ambil user saat ini:**
+
+```bash
+curl http://localhost:3000/api/users/current \
+  -H "Authorization: Bearer <token>"
+```
+
+**Logout:**
+
+```bash
+curl -X DELETE http://localhost:3000/api/users/logout \
+  -H "Authorization: Bearer <token>"
+```
+
+## Setup Project
+
+### Prasyarat
+
+- [Bun](https://bun.sh) (v1.x)
 - MySQL server yang bisa diakses
+- Git
 
-## Setup
+### Langkah Setup
 
 1. Install dependency:
 
@@ -44,7 +244,7 @@ Backend REST API dengan **Bun + ElysiaJS + Drizzle ORM + MySQL**.
    bun run db:migrate   # jalankan migrasi
    ```
 
-## Menjalankan
+## Menjalankan Aplikasi
 
 ```bash
 bun run dev    # development dengan auto-reload
@@ -59,12 +259,18 @@ Server berjalan di `http://localhost:3000`.
 bun run test
 ```
 
-Test memakai database MySQL terpisah bernama `vibes_coding_test` — dibuat
-otomatis oleh `tests/setup.ts` (didaftarkan lewat `bunfig.toml` sebagai preload)
-sehingga data development tidak pernah tersentuh. Koneksi yang dipakai adalah
-kredensial dari `DATABASE_URL` di `.env`, hanya nama database-nya yang diganti.
+Test berjalan di database terpisah `vibes_coding_test` yang dibuat otomatis oleh `tests/setup.ts`. Data development tidak pernah tersentuh.
 
 Nama database test bisa dioverride lewat variabel `TEST_DATABASE`.
+
+## Script Database
+
+| Script                | Fungsi                                  |
+| --------------------- | --------------------------------------- |
+| `bun run db:generate` | Generate file migrasi dari schema       |
+| `bun run db:migrate`  | Jalankan migrasi ke database            |
+| `bun run db:push`     | Push schema langsung tanpa file migrasi |
+| `bun run db:studio`   | Buka Drizzle Studio                     |
 
 ## Catatan Perilaku Sesi
 
@@ -76,143 +282,5 @@ Nama database test bisa dioverride lewat variabel `TEST_DATABASE`.
   menghapus seluruh sesinya.
 - Bentuk response setiap endpoint dideklarasikan lewat schema Elysia,
   sehingga field wajib (mis. tidak ada `password` di `/current`) terjamin.
-
-## Struktur Folder
-
-```
-src/
-  config/          # konfigurasi environment
-  db/              # koneksi & schema database
-    index.ts
-    schema.ts
-  middlewares/     # middleware, mis. error handler
-  routes/          # routing ElysiaJS
-    users-route.ts
-  services/        # logic bisnis aplikasi
-    users-service.ts
-  index.ts         # entry point server
-drizzle.config.ts  # konfigurasi Drizzle Kit
-```
-
-## Endpoint
-
-| Method   | Path                 | Keterangan                        |
-| -------- | -------------------- | --------------------------------- |
-| `GET`    | `/health`            | Health check                      |
-| `POST`   | `/api/users`         | Registrasi user baru              |
-| `POST`   | `/api/users/login`   | Login user                        |
-| `GET`    | `/api/users/current` | Ambil data user yang sedang login |
-| `DELETE` | `/api/users/logout`  | Logout user                       |
-
-### Registrasi User
-
-**Request:**
-
-```bash
-curl -X POST http://localhost:3000/api/users \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Dicky","email":"dicky@localhost","password":"rahasia"}'
-```
-
-**Response sukses (`201`):**
-
-```json
-{ "data": "OK" }
-```
-
-**Response error (`409`):**
-
-```json
-{ "error": "Email sudah terdaftar" }
-```
-
-**Response error (`400`) jika input tidak lengkap:**
-
-```json
-{ "error": "Input tidak valid" }
-```
-
-### Login User
-
-**Request:**
-
-```bash
-curl -X POST http://localhost:3000/api/users/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"dicky@localhost","password":"rahasia"}'
-```
-
-**Response sukses (`200`):**
-
-```json
-{ "data": "550e8400-e29b-41d4-a716-446655440000" }
-```
-
-**Response error (`401`) jika email atau password salah:**
-
-```json
-{ "error": "Email atau password salah" }
-```
-
-### Get Current User
-
-Membutuhkan token dari endpoint login (header `Authorization: Bearer <token>`).
-
-**Request:**
-
-```bash
-curl http://localhost:3000/api/users/current \
-  -H "Authorization: Bearer <token>"
-```
-
-**Response sukses (`200`):**
-
-```json
-{
-  "data": {
-    "id": 1,
-    "name": "Dicky",
-    "email": "dicky@localhost",
-    "created_at": "2026-09-25T15:25:25.000Z"
-  }
-}
-```
-
-**Response error (`401`) jika token salah atau header tidak dikirim:**
-
-```json
-{ "error": "Unauthorized" }
-```
-
-### Logout User
-
-Menghapus sesi (token) yang dikirim di header. Hanya sesi tersebut yang diakhiri —
-sesi lain milik user yang sama tetap aktif.
-
-**Request:**
-
-```bash
-curl -X DELETE http://localhost:3000/api/users/logout \
-  -H "Authorization: Bearer <token>"
-```
-
-**Response sukses (`200`):**
-
-```json
-{ "data": "OK" }
-```
-
-**Response error (`401`) jika token salah atau header tidak dikirim:**
-
-```json
-{ "error": "Unauthorized" }
-```
-
-## Script Database
-
-| Script                | Fungsi                                  |
-| --------------------- | --------------------------------------- |
-| `bun run db:generate` | Generate file migrasi dari schema       |
-| `bun run db:migrate`  | Jalankan migrasi ke database            |
-| `bun run db:push`     | Push schema langsung tanpa file migrasi |
-| `bun run db:studio`   | Buka Drizzle Studio                     |
+- Header `Authorization` bersifat case-insensitive pada skema (`bearer`,
+  `Bearer`, `BeArEr` semuanya diterima).
