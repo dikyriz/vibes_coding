@@ -8,6 +8,10 @@ import { sessions, users } from "../db/schema";
 const SALT_ROUNDS = 10;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+/**
+ * Error yang dilempar saat registrasi gagal karena email sudah terdaftar.
+ * Digunakan oleh route untuk mengembalikan status 409.
+ */
 export class EmailAlreadyRegisteredError extends Error {
   constructor() {
     super("Email sudah terdaftar");
@@ -15,6 +19,11 @@ export class EmailAlreadyRegisteredError extends Error {
   }
 }
 
+/**
+ * Error yang dilempar saat login gagal karena email atau password salah.
+ * Pesan error identik untuk kedua kasus agar attacker tidak bisa menebak email mana yang terdaftar.
+ * Digunakan oleh route untuk mengembalikan status 401.
+ */
 export class InvalidCredentialsError extends Error {
   constructor() {
     super("Email atau password salah");
@@ -22,6 +31,11 @@ export class InvalidCredentialsError extends Error {
   }
 }
 
+/**
+ * Error yang dilempar saat token tidak valid atau tidak ditemukan.
+ * Termasuk: token kosong, token tidak dikenal, token sudah di-logout, atau token kedaluwarsa.
+ * Digunakan oleh route untuk mengembalikan status 401.
+ */
 export class UnauthorizedError extends Error {
   constructor() {
     super("Unauthorized");
@@ -30,6 +44,14 @@ export class UnauthorizedError extends Error {
 }
 
 export const usersService = {
+  /**
+   * Mengecek apakah email sudah terdaftar di database.
+   * Dipakai sebelum registrasi untuk mencegah duplikasi email.
+   * Hanya mengambil kolom `id` karena hanya butuh keberadaan (boolean).
+   *
+   * @param email - Email yang akan dicek
+   * @returns `true` jika email sudah ada, `false` jika belum
+   */
   async isEmailRegistered(email: string) {
     const [user] = await db
       .select({ id: users.id })
@@ -39,6 +61,19 @@ export const usersService = {
     return Boolean(user);
   },
 
+  /**
+   * Mendaftarkan user baru ke database.
+   *
+   * Alur:
+   * 1. Cek apakah email sudah terdaftar → lempar `EmailAlreadyRegisteredError` jika ya
+   * 2. Hash password menggunakan bcrypt dengan `SALT_ROUNDS`
+   * 3. Insert user baru ke tabel `users`
+   *
+   * Password TIDAK dikembalikan ke caller (service hanya menyimpan).
+   *
+   * @param data - Objek berisi `name`, `email`, dan `password` (plaintext)
+   * @throws {EmailAlreadyRegisteredError} jika email sudah ada
+   */
   async register(data: { name: string; email: string; password: string }) {
     if (await this.isEmailRegistered(data.email)) {
       throw new EmailAlreadyRegisteredError();
@@ -53,6 +88,22 @@ export const usersService = {
     });
   },
 
+  /**
+   * Memverifikasi kredensial login dan membuat sesi baru.
+   *
+   * Alur:
+   * 1. Cari user berdasarkan email
+   * 2. Verifikasi password dengan `bcrypt.compare` terhadap hash yang tersimpan
+   * 3. Hapus sesi yang sudah kedaluwarsa (lazy cleanup)
+   * 4. Generate token UUID baru
+   * 5. Simpan sesi baru dengan `expiresAt` = sekarang + TTL
+   *
+   * Kembalikan token ke route agar bisa dikirim ke client.
+   *
+   * @param data - Objek berisi `email` dan `password` (plaintext)
+   * @returns Token UUID string yang bisa dipakai di header `Authorization`
+   * @throws {InvalidCredentialsError} jika email tidak ditemukan atau password salah
+   */
   async login(data: { email: string; password: string }) {
     const [user] = await db
       .select()
@@ -76,6 +127,21 @@ export const usersService = {
     return token;
   },
 
+  /**
+   * Mengambil data user berdasarkan token sesi.
+   *
+   * Alur:
+   * 1. Validasi token tidak kosong
+   * 2. Cari session aktif (token cocok DAN belum kedaluwarsa)
+   * 3. Ambil user dari `user_id` pada session tersebut
+   * 4. Kembalikan object user tanpa field `password`
+   *
+   * Field `created_at` ditransformasi ke string ISO agar konsisten dengan response schema.
+   *
+   * @param token - Token dari header `Authorization: Bearer <token>`
+   * @returns Object user dengan field `{ id, name, email, created_at }`
+   * @throws {UnauthorizedError} jika token kosong, tidak ditemukan, atau sudah kedaluwarsa
+   */
   async getCurrentUser(token: string) {
     if (!token) {
       throw new UnauthorizedError();
@@ -114,6 +180,23 @@ export const usersService = {
     };
   },
 
+  /**
+   * Mengakhiri sesi (logout) dengan menghapus token dari database.
+   *
+   * Alur:
+   * 1. Validasi token tidak kosong
+   * 2. Hapus baris sesi WHERE `token` cocok DAN belum kedaluwarsa
+   * 3. Jika tidak ada baris yang terhapus (`affectedRows === 0`), lempar error
+   *
+   * Pendekatan delete langsung (bukan check-then-delete) menjaga atomisitas:
+   * dua request logout paralel dengan token sama hanya akan berhasil satu.
+   *
+   * Sesi yang sudah kedaluwarsa tidak dihapus di sini — akan dibersihkan
+   * saat login berikutnya (lazy cleanup).
+   *
+   * @param token - Token dari header `Authorization: Bearer <token>`
+   * @throws {UnauthorizedError} jika token kosong, tidak ditemukan, atau sudah kedaluwarsa
+   */
   async logout(token: string) {
     if (!token) {
       throw new UnauthorizedError();
