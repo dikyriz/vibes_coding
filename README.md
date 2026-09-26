@@ -23,10 +23,11 @@ Backend REST API dengan **Bun + ElysiaJS + Drizzle ORM + MySQL**.
 
    Variabel yang tersedia:
 
-   | Variabel       | Keterangan                                                                   |
-   | -------------- | ---------------------------------------------------------------------------- |
-   | `PORT`         | Port server (default `3000`)                                                 |
-   | `DATABASE_URL` | Connection string MySQL (default `mysql://root@localhost:3306/vibes_coding`) |
+   | Variabel           | Keterangan                                                                   |
+   | ------------------ | ---------------------------------------------------------------------------- |
+   | `PORT`             | Port server (default `3000`)                                                 |
+   | `DATABASE_URL`     | Connection string MySQL (default `mysql://root@localhost:3306/vibes_coding`) |
+   | `SESSION_TTL_DAYS` | Masa berlaku token sesi dalam hari (default `7`)                             |
 
 3. Buat database jika belum ada:
 
@@ -52,6 +53,30 @@ bun run start  # production
 
 Server berjalan di `http://localhost:3000`.
 
+## Menjalankan Test
+
+```bash
+bun run test
+```
+
+Test memakai database MySQL terpisah bernama `vibes_coding_test` — dibuat
+otomatis oleh `tests/setup.ts` (didaftarkan lewat `bunfig.toml` sebagai preload)
+sehingga data development tidak pernah tersentuh. Koneksi yang dipakai adalah
+kredensial dari `DATABASE_URL` di `.env`, hanya nama database-nya yang diganti.
+
+Nama database test bisa dioverride lewat variabel `TEST_DATABASE`.
+
+## Catatan Perilaku Sesi
+
+- Sesi login kedaluwarsa otomatis setelah `SESSION_TTL_DAYS` hari (default 7);
+  token kedaluwarsa membalas `401 Unauthorized`.
+- Baris sesi yang sudah kedaluwarsa dibersihkan secara lazy saat login
+  berikutnya (tanpa cron).
+- `sessions.user_id` memakai FK `ON DELETE CASCADE`: menghapus user ikut
+  menghapus seluruh sesinya.
+- Bentuk response setiap endpoint dideklarasikan lewat schema Elysia,
+  sehingga field wajib (mis. tidak ada `password` di `/current`) terjamin.
+
 ## Struktur Folder
 
 ```
@@ -71,12 +96,13 @@ drizzle.config.ts  # konfigurasi Drizzle Kit
 
 ## Endpoint
 
-| Method | Path                 | Keterangan                        |
-| ------ | -------------------- | --------------------------------- |
-| `GET`  | `/health`            | Health check                      |
-| `POST` | `/api/users`         | Registrasi user baru              |
-| `POST` | `/api/users/login`   | Login user                        |
-| `GET`  | `/api/users/current` | Ambil data user yang sedang login |
+| Method   | Path                 | Keterangan                        |
+| -------- | -------------------- | --------------------------------- |
+| `GET`    | `/health`            | Health check                      |
+| `POST`   | `/api/users`         | Registrasi user baru              |
+| `POST`   | `/api/users/login`   | Login user                        |
+| `GET`    | `/api/users/current` | Ambil data user yang sedang login |
+| `DELETE` | `/api/users/logout`  | Logout user                       |
 
 ### Registrasi User
 
@@ -150,6 +176,30 @@ curl http://localhost:3000/api/users/current \
     "created_at": "2026-09-25T15:25:25.000Z"
   }
 }
+```
+
+**Response error (`401`) jika token salah atau header tidak dikirim:**
+
+```json
+{ "error": "Unauthorized" }
+```
+
+### Logout User
+
+Menghapus sesi (token) yang dikirim di header. Hanya sesi tersebut yang diakhiri —
+sesi lain milik user yang sama tetap aktif.
+
+**Request:**
+
+```bash
+curl -X DELETE http://localhost:3000/api/users/logout \
+  -H "Authorization: Bearer <token>"
+```
+
+**Response sukses (`200`):**
+
+```json
+{ "data": "OK" }
 ```
 
 **Response error (`401`) jika token salah atau header tidak dikirim:**
