@@ -68,6 +68,16 @@ describe("POST /api/users", () => {
     expect(response.status).toBe(400);
     expect(response.body).toEqual({ error: "Input tidak valid" });
   });
+
+  test("menolak name melebihi 255 karakter", async () => {
+    const longName = Array(300).fill("A").join("");
+    const response = await call("POST", "/api/users", {
+      body: { name: longName, email: "test@max.com", password: "rahasia" },
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: "Input tidak valid" });
+  });
 });
 
 describe("POST /api/users/login", () => {
