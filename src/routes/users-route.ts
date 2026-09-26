@@ -18,6 +18,18 @@ const extractBearerToken = (authorization?: string) => {
     : "";
 };
 
+const errorResponse = t.Object({ error: t.String() });
+const okResponse = t.Object({ data: t.Literal("OK") });
+
+// Whitelist eksplisit: memformalkan bentuk sukses dan mencegah tanpa sengaja
+// ada field berlebih (mis. password) lolos ke client.
+const userResponse = t.Object({
+  id: t.Number(),
+  name: t.String(),
+  email: t.String(),
+  created_at: t.String(),
+});
+
 export const usersRoute = new Elysia({ prefix: "/users" })
   .post(
     "/",
@@ -40,6 +52,10 @@ export const usersRoute = new Elysia({ prefix: "/users" })
         email: t.String({ minLength: 1 }),
         password: t.String({ minLength: 1 }),
       }),
+      response: {
+        201: okResponse,
+        409: errorResponse,
+      },
     },
   )
   .post(
@@ -61,33 +77,55 @@ export const usersRoute = new Elysia({ prefix: "/users" })
         email: t.String({ minLength: 1 }),
         password: t.String({ minLength: 1 }),
       }),
+      response: {
+        200: t.Object({ data: t.String() }),
+        401: errorResponse,
+      },
     },
   )
-  .get("/current", async ({ headers, status }) => {
-    const token = extractBearerToken(headers.authorization);
+  .get(
+    "/current",
+    async ({ headers, status }) => {
+      const token = extractBearerToken(headers.authorization);
 
-    try {
-      const user = await usersService.getCurrentUser(token);
-      return status(200, { data: user });
-    } catch (error) {
-      if (error instanceof UnauthorizedError) {
-        return status(401, { error: error.message });
+      try {
+        const user = await usersService.getCurrentUser(token);
+        return status(200, { data: user });
+      } catch (error) {
+        if (error instanceof UnauthorizedError) {
+          return status(401, { error: error.message });
+        }
+
+        throw error;
       }
+    },
+    {
+      response: {
+        200: t.Object({ data: userResponse }),
+        401: errorResponse,
+      },
+    },
+  )
+  .delete(
+    "/logout",
+    async ({ headers, status }) => {
+      const token = extractBearerToken(headers.authorization);
 
-      throw error;
-    }
-  })
-  .delete("/logout", async ({ headers, status }) => {
-    const token = extractBearerToken(headers.authorization);
+      try {
+        await usersService.logout(token);
+        return status(200, { data: "OK" });
+      } catch (error) {
+        if (error instanceof UnauthorizedError) {
+          return status(401, { error: error.message });
+        }
 
-    try {
-      await usersService.logout(token);
-      return status(200, { data: "OK" });
-    } catch (error) {
-      if (error instanceof UnauthorizedError) {
-        return status(401, { error: error.message });
+        throw error;
       }
-
-      throw error;
-    }
-  });
+    },
+    {
+      response: {
+        200: okResponse,
+        401: errorResponse,
+      },
+    },
+  );

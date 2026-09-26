@@ -23,10 +23,11 @@ Backend REST API dengan **Bun + ElysiaJS + Drizzle ORM + MySQL**.
 
    Variabel yang tersedia:
 
-   | Variabel       | Keterangan                                                                   |
-   | -------------- | ---------------------------------------------------------------------------- |
-   | `PORT`         | Port server (default `3000`)                                                 |
-   | `DATABASE_URL` | Connection string MySQL (default `mysql://root@localhost:3306/vibes_coding`) |
+   | Variabel           | Keterangan                                                                   |
+   | ------------------ | ---------------------------------------------------------------------------- |
+   | `PORT`             | Port server (default `3000`)                                                 |
+   | `DATABASE_URL`     | Connection string MySQL (default `mysql://root@localhost:3306/vibes_coding`) |
+   | `SESSION_TTL_DAYS` | Masa berlaku token sesi dalam hari (default `7`)                             |
 
 3. Buat database jika belum ada:
 
@@ -64,6 +65,17 @@ sehingga data development tidak pernah tersentuh. Koneksi yang dipakai adalah
 kredensial dari `DATABASE_URL` di `.env`, hanya nama database-nya yang diganti.
 
 Nama database test bisa dioverride lewat variabel `TEST_DATABASE`.
+
+## Catatan Perilaku Sesi
+
+- Sesi login kedaluwarsa otomatis setelah `SESSION_TTL_DAYS` hari (default 7);
+  token kedaluwarsa membalas `401 Unauthorized`.
+- Baris sesi yang sudah kedaluwarsa dibersihkan secara lazy saat login
+  berikutnya (tanpa cron).
+- `sessions.user_id` memakai FK `ON DELETE CASCADE`: menghapus user ikut
+  menghapus seluruh sesinya.
+- Bentuk response setiap endpoint dideklarasikan lewat schema Elysia,
+  sehingga field wajib (mis. tidak ada `password` di `/current`) terjamin.
 
 ## Struktur Folder
 

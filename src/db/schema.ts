@@ -13,8 +13,9 @@ export const sessions = mysqlTable("sessions", {
   token: varchar("token", { length: 255 }).notNull().unique(),
   userId: int("user_id")
     .notNull()
-    .references(() => users.id),
+    .references(() => users.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at").notNull().defaultNow(),
 });
 
 export type User = typeof users.$inferSelect;

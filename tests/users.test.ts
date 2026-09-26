@@ -1,8 +1,10 @@
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
 import mysql from "mysql2/promise";
 import { migrate } from "drizzle-orm/mysql2/migrator";
 
 import { db } from "../src/db";
+import { sessions, users } from "../src/db/schema";
 import {
   call,
   findStoredUser,
@@ -272,6 +274,91 @@ describe("skema Authorization", () => {
   });
 });
 
+describe("masa kedaluwarsa sesi", () => {
+  async function registerUser() {
+    await call("POST", "/api/users", {
+      body: { name: "Dicky", email: EMAIL, password: PASSWORD },
+    });
+
+    const stored = await findStoredUser(EMAIL);
+
+    if (!stored) {
+      throw new Error("user tidak ditemukan setelah registrasi");
+    }
+
+    return stored;
+  }
+
+  test("sesi kedaluwarsa ditolak saat membaca user saat ini", async () => {
+    const stored = await registerUser();
+
+    await db.insert(sessions).values({
+      token: "expired-current",
+      userId: stored.id,
+      expiresAt: new Date(Date.now() - 1000),
+    });
+
+    const response = await call("GET", "/api/users/current", {
+      token: "Bearer expired-current",
+    });
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({ error: "Unauthorized" });
+  });
+
+  test("sesi kedaluwarsa ditolak saat logout", async () => {
+    const stored = await registerUser();
+
+    await db.insert(sessions).values({
+      token: "expired-logout",
+      userId: stored.id,
+      expiresAt: new Date(Date.now() - 1000),
+    });
+
+    const response = await call("DELETE", "/api/users/logout", {
+      token: "Bearer expired-logout",
+    });
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({ error: "Unauthorized" });
+  });
+
+  test("login membersihkan sesi yang sudah kedaluwarsa", async () => {
+    const stored = await registerUser();
+
+    await db.insert(sessions).values({
+      token: "expired-purge",
+      userId: stored.id,
+      expiresAt: new Date(Date.now() - 1000),
+    });
+
+    expect(await sessionCount()).toBe(1);
+
+    await call("POST", "/api/users/login", {
+      body: { email: EMAIL, password: PASSWORD },
+    });
+
+    // expired terhapus, sesi baru bertambah -> tetap 1
+    expect(await sessionCount()).toBe(1);
+  });
+
+  test("sesi baru diberi expires_at sesuai TTL default 7 hari", async () => {
+    const { token } = await registerAndLogin({ email: EMAIL });
+
+    const [row] = await db
+      .select({ expiresAt: sessions.expiresAt })
+      .from(sessions)
+      .where(eq(sessions.token, token));
+
+    const ttlMs = row.expiresAt.getTime() - Date.now();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+
+    // MySQL membulatkan timestamp ke detik, beri toleransi 2 detik.
+    expect(ttlMs).toBeGreaterThan(sevenDaysMs - 60_000);
+    expect(ttlMs).toBeLessThanOrEqual(sevenDaysMs + 2000);
+  });
+});
+
 /**
  * Membaca metadata schema lewat koneksi read-only terpisah.
  * Sengaja tidak lewat connection pool aplikasi dan tidak pakai INSERT gagal:
@@ -320,5 +407,16 @@ describe("constraint tabel sessions", () => {
     expect(foreignKeys.map((row) => row.REFERENCED_COLUMN_NAME)).toEqual([
       "id",
     ]);
+  });
+
+  test("menghapus user ikut menghapus sesi miliknya (cascade)", async () => {
+    await registerAndLogin({ email: EMAIL });
+    const stored = await findStoredUser(EMAIL);
+
+    expect(await sessionCount()).toBe(1);
+
+    await db.delete(users).where(eq(users.id, stored!.id));
+
+    expect(await sessionCount()).toBe(0);
   });
 });
