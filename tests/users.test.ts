@@ -78,6 +78,26 @@ describe("POST /api/users", () => {
     expect(response.status).toBe(400);
     expect(response.body).toEqual({ error: "Input tidak valid" });
   });
+
+  test("menolak email melebihi 255 karakter", async () => {
+    const longEmail = `${Array(250).fill("a").join("")}@localhost`;
+    const response = await call("POST", "/api/users", {
+      body: { name: "Dicky", email: longEmail, password: "rahasia" },
+    });
+
+    expect(longEmail.length).toBeGreaterThan(255);
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: "Input tidak valid" });
+  });
+
+  test("menolak password kosong", async () => {
+    const response = await call("POST", "/api/users", {
+      body: { name: "Dicky", email: EMAIL, password: "" },
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: "Input tidak valid" });
+  });
 });
 
 describe("POST /api/users/login", () => {
@@ -122,6 +142,19 @@ describe("POST /api/users/login", () => {
     expect(first.body.data).not.toBe(second.body.data);
     expect(await sessionCount()).toBe(2);
   });
+
+  test("menolak body login yang tidak lengkap", async () => {
+    await registerAndLogin({ email: EMAIL });
+
+    const withoutPassword = await call("POST", "/api/users/login", {
+      body: { email: EMAIL },
+    });
+    const emptyBody = await call("POST", "/api/users/login");
+
+    expect(withoutPassword.status).toBe(400);
+    expect(withoutPassword.body).toEqual({ error: "Input tidak valid" });
+    expect(emptyBody.status).toBe(400);
+  });
 });
 
 describe("GET /api/users/current", () => {
@@ -164,6 +197,22 @@ describe("GET /api/users/current", () => {
     const { token } = await registerAndLogin({ email: EMAIL });
 
     const response = await call("GET", "/api/users/current", { token });
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({ error: "Unauthorized" });
+  });
+
+  test("menghasilkan 401 saat token sudah di-logout", async () => {
+    const { token } = await registerAndLogin({ email: EMAIL });
+
+    const logout = await call("DELETE", "/api/users/logout", {
+      token: `Bearer ${token}`,
+    });
+    expect(logout.status).toBe(200);
+
+    const response = await call("GET", "/api/users/current", {
+      token: `Bearer ${token}`,
+    });
 
     expect(response.status).toBe(401);
     expect(response.body).toEqual({ error: "Unauthorized" });
@@ -264,6 +313,38 @@ describe("DELETE /api/users/logout", () => {
 
     expect(responses.map((r) => r.status).sort()).toEqual([200, 401]);
     expect(await sessionCount()).toBe(0);
+  });
+
+  test("menghasilkan 401 saat header Authorization tidak dikirim", async () => {
+    await registerAndLogin({ email: EMAIL });
+
+    const response = await call("DELETE", "/api/users/logout");
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({ error: "Unauthorized" });
+    expect(await sessionCount()).toBe(1);
+  });
+
+  test("menghasilkan 401 saat format header salah", async () => {
+    const { token } = await registerAndLogin({ email: EMAIL });
+
+    const withoutScheme = await call("DELETE", "/api/users/logout", {
+      token,
+    });
+    const wrongScheme = await call("DELETE", "/api/users/logout", {
+      token: `Token ${token}`,
+    });
+    const emptyToken = await call("DELETE", "/api/users/logout", {
+      token: "Bearer ",
+    });
+
+    for (const response of [withoutScheme, wrongScheme, emptyToken]) {
+      expect(response.status).toBe(401);
+      expect(response.body).toEqual({ error: "Unauthorized" });
+    }
+
+    // Tidak ada sesi yang terhapus oleh request yang gagal.
+    expect(await sessionCount()).toBe(1);
   });
 });
 
@@ -367,31 +448,95 @@ describe("masa kedaluwarsa sesi", () => {
     expect(ttlMs).toBeGreaterThan(sevenDaysMs - 60_000);
     expect(ttlMs).toBeLessThanOrEqual(sevenDaysMs + 2000);
   });
+
+  test("TTL sesi mengikuti env SESSION_TTL_DAYS", () => {
+    // Dibaca lewat proses terpisah karena src/config/env.ts membaca env saat
+    // module load, sehingga tidak bisa diubah di proses test yang sudah jalan.
+    const readSessionTtlDays = (value?: string) => {
+      const env = { ...process.env } as Record<string, string>;
+
+      if (value === undefined) {
+        delete env.SESSION_TTL_DAYS;
+      } else {
+        env.SESSION_TTL_DAYS = value;
+      }
+
+      const result = Bun.spawnSync({
+        cmd: [
+          "bun",
+          "-e",
+          "(async () => { const { env } = await import('./src/config/env'); console.log(env.sessionTtlDays); })()",
+        ],
+        cwd: `${import.meta.dir}/..`,
+        env,
+      });
+
+      return result.stdout.toString().trim();
+    };
+
+    expect(readSessionTtlDays("3")).toBe("3");
+    expect(readSessionTtlDays("30")).toBe("30");
+    expect(readSessionTtlDays()).toBe("7");
+  });
 });
 
 /**
- * Membaca metadata schema lewat koneksi read-only terpisah.
- * Sengaja tidak lewat connection pool aplikasi dan tidak pakai INSERT gagal:
- * saat dijalankan lewat pool, test INSERT melanggar constraint sebelumnya
- * timeout (janji query tidak pernah selesai), sehingga untuk amannya
- * kehadiran constraint dibuktikan lewat metadata database saja.
+ * Menjalankan query lewat koneksi MySQL terpisah.
+ *
+ * - Sengaja tidak memakai connection pool aplikasi: INSERT yang melanggar
+ *   constraint lewat pool (mysql2 di Bun) bisa membuat janji query tidak
+ *   pernah selesai dan menggantungkan test.
+ * - Ada guard: koneksi menolak dipakai kalau targetnya bukan database test.
+ * - `destroy()` (bukan `end()`) supaya koneksi langsung diputus.
  */
-async function queryMetadata(sqlText: string) {
+async function withRawConnection<T>(
+  run: (connection: mysql.Connection) => Promise<T>,
+): Promise<T> {
   const url = new URL(process.env.DATABASE_URL ?? "");
+  const database = decodeURIComponent(url.pathname.slice(1));
+
+  if (database !== TEST_DATABASE) {
+    throw new Error(
+      `Menolak query ke database non-test: "${database}" (harus "${TEST_DATABASE}")`,
+    );
+  }
+
   const connection = await mysql.createConnection({
     host: url.hostname,
     port: Number(url.port || 3306),
     user: decodeURIComponent(url.username),
     password: decodeURIComponent(url.password),
-    database: decodeURIComponent(url.pathname.slice(1)),
+    database,
+    connectTimeout: 5000,
   });
 
   try {
+    return await run(connection);
+  } finally {
+    connection.destroy();
+  }
+}
+
+async function queryMetadata(sqlText: string) {
+  return withRawConnection(async (connection) => {
     const [rows] = await connection.query(sqlText);
     return rows as Record<string, unknown>[];
-  } finally {
-    await connection.end();
-  }
+  });
+}
+
+/** Mengembalikan error kalau query gagal, atau `null` kalau ternyata berhasil. */
+async function runQueryExpectingFailure(
+  sqlText: string,
+  params: unknown[],
+): Promise<Error | null> {
+  return withRawConnection(async (connection) => {
+    try {
+      await connection.query(sqlText, params);
+      return null;
+    } catch (error) {
+      return error as Error;
+    }
+  });
 }
 
 describe("constraint tabel sessions", () => {
@@ -428,5 +573,29 @@ describe("constraint tabel sessions", () => {
     await db.delete(users).where(eq(users.id, stored!.id));
 
     expect(await sessionCount()).toBe(0);
+  });
+
+  test("insert token duplikat gagal", async () => {
+    const { token } = await registerAndLogin({ email: EMAIL });
+    const stored = await findStoredUser(EMAIL);
+
+    const error = await runQueryExpectingFailure(
+      "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, NOW())",
+      [token, stored!.id],
+    );
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error?.message).toMatch(/duplicate/i);
+    expect(await sessionCount()).toBe(1);
+  });
+
+  test("insert user_id yang tidak ada gagal (foreign key)", async () => {
+    const error = await runQueryExpectingFailure(
+      "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, NOW())",
+      [crypto.randomUUID(), 999_999],
+    );
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error?.message).toMatch(/foreign key/i);
   });
 });
