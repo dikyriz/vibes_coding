@@ -104,15 +104,12 @@ export const usersService = {
       throw new UnauthorizedError();
     }
 
-    const [session] = await db
-      .select({ id: sessions.id })
-      .from(sessions)
-      .where(eq(sessions.token, token));
+    // Hapus langsung lalu periksa affectedRows: dua logout paralel dengan
+    // token sama kini atomis — hanya satu yang menghapus baris dan dapat 200.
+    const [result] = await db.delete(sessions).where(eq(sessions.token, token));
 
-    if (!session) {
+    if (result.affectedRows === 0) {
       throw new UnauthorizedError();
     }
-
-    await db.delete(sessions).where(eq(sessions.token, token));
   },
 };

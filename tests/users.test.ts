@@ -241,6 +241,35 @@ describe("DELETE /api/users/logout", () => {
     expect(stored).toBeDefined();
     expect(stored?.email).toBe(EMAIL);
   });
+
+  test("hanya satu dari dua logout paralel yang berhasil", async () => {
+    const { token } = await registerAndLogin({ email: EMAIL });
+
+    const responses = await Promise.all([
+      call("DELETE", "/api/users/logout", { token: `Bearer ${token}` }),
+      call("DELETE", "/api/users/logout", { token: `Bearer ${token}` }),
+    ]);
+
+    expect(responses.map((r) => r.status).sort()).toEqual([200, 401]);
+    expect(await sessionCount()).toBe(0);
+  });
+});
+
+describe("skema Authorization", () => {
+  test("diterima dalam huruf besar maupun kecil", async () => {
+    const { token } = await registerAndLogin({ email: EMAIL });
+
+    const lower = await call("GET", "/api/users/current", {
+      token: `bearer ${token}`,
+    });
+    expect(lower.status).toBe(200);
+
+    const mixed = await call("DELETE", "/api/users/logout", {
+      token: `BeArEr ${token}`,
+    });
+    expect(mixed.status).toBe(200);
+    expect(await sessionCount()).toBe(0);
+  });
 });
 
 /**

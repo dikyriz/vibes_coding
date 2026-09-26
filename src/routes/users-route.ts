@@ -7,12 +7,16 @@ import {
   usersService,
 } from "../services/users-service";
 
-const BEARER_PREFIX = "Bearer ";
+// RFC 7235: nama skema pada header Authorization bersifat case-insensitive.
+const BEARER_SCHEME = "bearer ";
 
-const extractBearerToken = (authorization?: string) =>
-  authorization?.startsWith(BEARER_PREFIX)
-    ? authorization.slice(BEARER_PREFIX.length)
+const extractBearerToken = (authorization?: string) => {
+  const value = authorization ?? "";
+
+  return value.slice(0, BEARER_SCHEME.length).toLowerCase() === BEARER_SCHEME
+    ? value.slice(BEARER_SCHEME.length)
     : "";
+};
 
 export const usersRoute = new Elysia({ prefix: "/users" })
   .post(
