@@ -208,6 +208,24 @@ curl -X DELETE http://localhost:3000/api/users/logout \
 { "error": "Unauthorized" }
 ```
 
+## Dokumentasi API (Swagger)
+
+API ini dilengkapi Swagger UI interaktif, sehingga developer lain bisa melihat
+semua endpoint, format request/response, dan mencoba API langsung dari browser
+tanpa perlu membaca source code.
+
+| Halaman                 | URL                                |
+| ----------------------- | ---------------------------------- |
+| Swagger UI (interaktif) | http://localhost:3000/docs         |
+| OpenAPI spec (JSON)     | http://localhost:3000/openapi.json |
+
+Catatan:
+
+- UI hanya tersedia saat server jalan (`bun run dev`).
+- Port mengikuti `PORT` di `.env` (default `3000`).
+- Untuk mencoba endpoint yang butuh autentikasi, klik **Authorize** lalu isi
+  `Bearer <token>` yang didapat dari endpoint login.
+
 ## Script Database
 
 | Script                | Fungsi                                  |

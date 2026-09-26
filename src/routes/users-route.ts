@@ -32,7 +32,7 @@ const userResponse = t.Object({
 
 export const usersRoute = new Elysia({ prefix: "/users" })
   .post(
-    "/",
+    "",
     async ({ body, status }) => {
       try {
         await usersService.register(body);
